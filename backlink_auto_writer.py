@@ -662,12 +662,10 @@ class BacklinkAutoWriter:
         """HTML 사용 옵션 활성화 - 다양한 방법으로 시도"""
 
         def handle_alert():
-            """confirm 대화상자 처리 - 자동 줄바꿈 질문에는 '취소'로 응답"""
+            """confirm 대화상자 처리 - 확인 클릭"""
             try:
-                alert = WebDriverWait(self.driver, 1).until(EC.alert_is_present())
-                # "자동 줄바꿈" 관련 confirm은 취소(dismiss)해야 HTML이 그대로 유지됨
-                # accept()하면 <br> 태그가 자동 추가되어 HTML이 깨질 수 있음
-                alert.dismiss()
+                alert = WebDriverWait(self.driver, 2).until(EC.alert_is_present())
+                alert.accept()  # 확인 클릭
             except:
                 pass
 
