@@ -459,37 +459,112 @@ class BacklinkAutoWriter:
             messagebox.showerror("오류", f"자동 입력 실패:\n{str(e)}")
 
     def fill_field(self, field_names, value):
-        """필드에 값 입력"""
+        """필드에 값 입력 - 다양한 방법으로 시도"""
+
+        def try_fill_element(element, val):
+            """요소에 값 입력 시도"""
+            try:
+                # 스크롤하여 요소가 보이게
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                time.sleep(0.2)
+
+                # 요소가 상호작용 가능할 때까지 대기
+                WebDriverWait(self.driver, 3).until(EC.element_to_be_clickable(element))
+
+                element.clear()
+                element.send_keys(val)
+                return True
+            except:
+                pass
+
+            # JavaScript로 직접 입력 시도
+            try:
+                self.driver.execute_script("""
+                    arguments[0].value = arguments[1];
+                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+                """, element, val)
+                return True
+            except:
+                pass
+
+            return False
+
+        for field_name in field_names:
+            # name 속성으로 찾기
+            try:
+                element = self.driver.find_element(By.NAME, field_name)
+                if try_fill_element(element, value):
+                    return True
+            except NoSuchElementException:
+                pass
+
+            # id 속성으로 찾기
+            try:
+                element = self.driver.find_element(By.ID, field_name)
+                if try_fill_element(element, value):
+                    return True
+            except NoSuchElementException:
+                pass
+
+        # 최후의 방법: JavaScript로 모든 가능한 필드에 직접 입력
         for field_name in field_names:
             try:
-                # name 속성으로 찾기
-                element = self.driver.find_element(By.NAME, field_name)
-                element.clear()
-                element.send_keys(value)
-                return True
-            except NoSuchElementException:
-                continue
-
-            try:
-                # id 속성으로 찾기
-                element = self.driver.find_element(By.ID, field_name)
-                element.clear()
-                element.send_keys(value)
-                return True
-            except NoSuchElementException:
-                continue
+                result = self.driver.execute_script("""
+                    var elem = document.querySelector('input[name="' + arguments[0] + '"], input[id="' + arguments[0] + '"], textarea[name="' + arguments[0] + '"], textarea[id="' + arguments[0] + '"]');
+                    if (elem) {
+                        elem.value = arguments[1];
+                        elem.dispatchEvent(new Event('input', { bubbles: true }));
+                        elem.dispatchEvent(new Event('change', { bubbles: true }));
+                        return true;
+                    }
+                    return false;
+                """, field_name, value)
+                if result:
+                    return True
+            except:
+                pass
 
         return False
 
     def fill_content(self, field_names, content):
-        """내용 필드에 값 입력 (에디터 지원)"""
+        """내용 필드에 값 입력 (에디터 지원) - 다양한 방법으로 시도"""
+
+        def try_fill_textarea(element, text):
+            """textarea에 값 입력 시도"""
+            try:
+                # 스크롤하여 요소가 보이게
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                time.sleep(0.2)
+
+                # 요소가 상호작용 가능할 때까지 대기
+                WebDriverWait(self.driver, 3).until(EC.element_to_be_clickable(element))
+
+                element.clear()
+                element.send_keys(text)
+                return True
+            except:
+                pass
+
+            # JavaScript로 직접 입력
+            try:
+                self.driver.execute_script("""
+                    arguments[0].value = arguments[1];
+                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+                """, element, text)
+                return True
+            except:
+                pass
+
+            return False
+
         # 먼저 일반 textarea 시도
         for field_name in field_names:
             try:
                 element = self.driver.find_element(By.NAME, field_name)
-                element.clear()
-                element.send_keys(content)
-                return True
+                if try_fill_textarea(element, content):
+                    return True
             except NoSuchElementException:
                 continue
 
@@ -500,23 +575,82 @@ class BacklinkAutoWriter:
                 try:
                     self.driver.switch_to.frame(iframe)
                     body = self.driver.find_element(By.TAG_NAME, "body")
-                    body.clear()
-                    body.send_keys(content)
+
+                    # 스크롤 및 클릭 가능 대기
+                    try:
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", body)
+                        body.clear()
+                        body.send_keys(content)
+                        self.driver.switch_to.default_content()
+                        return True
+                    except:
+                        # JavaScript로 직접 입력
+                        try:
+                            self.driver.execute_script("arguments[0].innerHTML = arguments[1];", body, content)
+                            self.driver.switch_to.default_content()
+                            return True
+                        except:
+                            pass
+
                     self.driver.switch_to.default_content()
-                    return True
                 except:
                     self.driver.switch_to.default_content()
                     continue
         except:
             pass
 
-        # JavaScript로 직접 입력 시도
+        # JavaScript로 직접 입력 시도 (다양한 선택자)
+        js_selectors = [
+            'textarea[name="wr_content"]',
+            'textarea[id="wr_content"]',
+            'textarea[name="content"]',
+            'textarea[id="content"]',
+            'textarea',  # 첫 번째 textarea
+        ]
+
+        for selector in js_selectors:
+            try:
+                result = self.driver.execute_script("""
+                    var elem = document.querySelector(arguments[0]);
+                    if (elem) {
+                        elem.value = arguments[1];
+                        elem.dispatchEvent(new Event('input', { bubbles: true }));
+                        elem.dispatchEvent(new Event('change', { bubbles: true }));
+                        return true;
+                    }
+                    return false;
+                """, selector, content)
+                if result:
+                    return True
+            except:
+                pass
+
+        # 에디터 API 직접 호출 시도 (CKEDITOR, SmartEditor 등)
         try:
-            self.driver.execute_script(f"""
-                var editors = document.querySelectorAll('textarea[name="wr_content"], textarea[id="wr_content"]');
-                if (editors.length > 0) {{
-                    editors[0].value = arguments[0];
-                }}
+            self.driver.execute_script("""
+                // CKEditor
+                if (typeof CKEDITOR !== 'undefined') {
+                    for (var name in CKEDITOR.instances) {
+                        CKEDITOR.instances[name].setData(arguments[0]);
+                        return;
+                    }
+                }
+
+                // SmartEditor (네이버)
+                if (typeof oEditors !== 'undefined' && oEditors.length > 0) {
+                    oEditors.getById['wr_content'].exec('UPDATE_CONTENTS_FIELD', []);
+                    document.querySelector('textarea[name="wr_content"]').value = arguments[0];
+                    return;
+                }
+
+                // TinyMCE
+                if (typeof tinymce !== 'undefined') {
+                    var editor = tinymce.activeEditor || tinymce.editors[0];
+                    if (editor) {
+                        editor.setContent(arguments[0]);
+                        return;
+                    }
+                }
             """, content)
             return True
         except:
@@ -525,22 +659,39 @@ class BacklinkAutoWriter:
         return False
 
     def enable_html_option(self):
-        """HTML 사용 옵션 활성화"""
-        try:
-            from selenium.webdriver.common.alert import Alert
+        """HTML 사용 옵션 활성화 - 다양한 방법으로 시도"""
 
+        def handle_alert():
+            """confirm 대화상자 처리 - 자동 줄바꿈 질문에는 '취소'로 응답"""
+            try:
+                alert = WebDriverWait(self.driver, 1).until(EC.alert_is_present())
+                # "자동 줄바꿈" 관련 confirm은 취소(dismiss)해야 HTML이 그대로 유지됨
+                # accept()하면 <br> 태그가 자동 추가되어 HTML이 깨질 수 있음
+                alert.dismiss()
+            except:
+                pass
+
+        def try_click_checkbox(element):
+            """체크박스 클릭 시도"""
+            try:
+                if element and element.is_displayed():
+                    if not element.is_selected():
+                        # 스크롤하여 요소가 보이게
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                        time.sleep(0.2)
+                        element.click()
+                        handle_alert()
+                    return True
+            except:
+                pass
+            return False
+
+        try:
             # 방법 1: id="html" 체크박스 (가장 흔한 형태)
             try:
                 html_checkbox = self.driver.find_element(By.ID, "html")
-                if not html_checkbox.is_selected():
-                    html_checkbox.click()
-                    # confirm 대화상자 처리 (자동 줄바꿈 확인)
-                    try:
-                        alert = WebDriverWait(self.driver, 1).until(EC.alert_is_present())
-                        alert.accept()
-                    except:
-                        pass
-                return True
+                if try_click_checkbox(html_checkbox):
+                    return True
             except NoSuchElementException:
                 pass
 
@@ -548,30 +699,16 @@ class BacklinkAutoWriter:
             try:
                 html_elem = self.driver.find_element(By.NAME, "html")
                 if html_elem.get_attribute("type") == "checkbox":
-                    if not html_elem.is_selected():
-                        html_elem.click()
-                        # confirm 대화상자 처리
-                        try:
-                            alert = WebDriverWait(self.driver, 1).until(EC.alert_is_present())
-                            alert.accept()
-                        except:
-                            pass
-                    return True
+                    if try_click_checkbox(html_elem):
+                        return True
             except NoSuchElementException:
                 pass
 
             # 방법 3: html1 라디오 버튼 (구버전 그누보드)
             try:
                 html_radio = self.driver.find_element(By.ID, "html1")
-                if not html_radio.is_selected():
-                    html_radio.click()
-                    # confirm 대화상자 처리
-                    try:
-                        alert = WebDriverWait(self.driver, 1).until(EC.alert_is_present())
-                        alert.accept()
-                    except:
-                        pass
-                return True
+                if try_click_checkbox(html_radio):
+                    return True
             except NoSuchElementException:
                 pass
 
@@ -580,52 +717,149 @@ class BacklinkAutoWriter:
                 html_radios = self.driver.find_elements(By.NAME, "html")
                 for radio in html_radios:
                     if radio.get_attribute("type") == "radio" and radio.get_attribute("value") == "html1":
-                        if not radio.is_selected():
-                            radio.click()
-                            # confirm 대화상자 처리
-                            try:
-                                alert = WebDriverWait(self.driver, 1).until(EC.alert_is_present())
-                                alert.accept()
-                            except:
-                                pass
-                        return True
+                        if try_click_checkbox(radio):
+                            return True
             except:
                 pass
 
-            # 방법 5: JavaScript로 직접 설정 (클릭 이벤트 포함)
-            self.driver.execute_script("""
-                // 체크박스 형태 (id="html" 또는 name="html")
-                var htmlCheck = document.getElementById('html') || document.querySelector('input[name="html"][type="checkbox"]');
-                if (htmlCheck && !htmlCheck.checked) {
-                    htmlCheck.checked = true;
-                    // onclick 이벤트가 있으면 실행하지 않음 (confirm 대화상자 방지)
-                    return;
-                }
+            # 방법 5: wr_html 체크박스
+            try:
+                wr_html = self.driver.find_element(By.NAME, "wr_html")
+                if try_click_checkbox(wr_html):
+                    return True
+            except NoSuchElementException:
+                pass
 
-                // 라디오 버튼 형태 (html1)
-                var htmlRadio = document.getElementById('html1');
-                if (htmlRadio && !htmlRadio.checked) { htmlRadio.checked = true; return; }
+            # 방법 6: CSS 선택자로 다양한 HTML 관련 체크박스 찾기
+            css_selectors = [
+                'input[type="checkbox"][id*="html" i]',
+                'input[type="checkbox"][name*="html" i]',
+                'input[type="checkbox"][value*="html" i]',
+                'input[id*="html" i]',
+                'input[name*="html" i]',
+            ]
+            for selector in css_selectors:
+                try:
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for elem in elements:
+                        if try_click_checkbox(elem):
+                            return True
+                except:
+                    pass
 
-                // 라디오 버튼 중 value="html1"
-                var htmlRadios = document.querySelectorAll('input[name="html"][type="radio"]');
-                for (var i = 0; i < htmlRadios.length; i++) {
-                    if (htmlRadios[i].value == 'html1' && !htmlRadios[i].checked) {
-                        htmlRadios[i].checked = true;
-                        return;
+            # 방법 7: XPath로 "HTML" 텍스트 근처의 체크박스 찾기
+            xpath_patterns = [
+                '//label[contains(text(),"HTML")]/input[@type="checkbox"]',
+                '//label[contains(text(),"HTML")]/preceding-sibling::input[@type="checkbox"]',
+                '//label[contains(text(),"HTML")]/following-sibling::input[@type="checkbox"]',
+                '//input[@type="checkbox"]/following-sibling::text()[contains(.,"HTML")]/preceding-sibling::input',
+                '//*[contains(text(),"HTML")]/parent::*/input[@type="checkbox"]',
+                '//*[contains(text(),"HTML")]/parent::*//input[@type="checkbox"]',
+                '//input[@type="checkbox"][following-sibling::*[contains(text(),"HTML")]]',
+                '//input[@type="checkbox"][preceding-sibling::*[contains(text(),"HTML")]]',
+            ]
+            for xpath in xpath_patterns:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, xpath)
+                    for elem in elements:
+                        if try_click_checkbox(elem):
+                            return True
+                except:
+                    pass
+
+            # 방법 8: 라벨 클릭 (for 속성으로 연결된 경우)
+            try:
+                labels = self.driver.find_elements(By.XPATH, '//label[contains(text(),"HTML")]')
+                for label in labels:
+                    for_attr = label.get_attribute("for")
+                    if for_attr:
+                        try:
+                            checkbox = self.driver.find_element(By.ID, for_attr)
+                            if try_click_checkbox(checkbox):
+                                return True
+                        except:
+                            pass
+                    # 라벨 자체를 클릭
+                    try:
+                        label.click()
+                        handle_alert()
+                        return True
+                    except:
+                        pass
+            except:
+                pass
+
+            # 방법 9: JavaScript로 다양한 방법 시도
+            result = self.driver.execute_script("""
+                // 1. id나 name에 html이 포함된 체크박스
+                var selectors = [
+                    'input[type="checkbox"][id="html"]',
+                    'input[type="checkbox"][name="html"]',
+                    'input#html',
+                    'input[name="html"]',
+                    'input[type="checkbox"][id*="html"]',
+                    'input[type="checkbox"][name*="html"]',
+                    'input[name="wr_html"]'
+                ];
+
+                for (var i = 0; i < selectors.length; i++) {
+                    var elem = document.querySelector(selectors[i]);
+                    if (elem && !elem.checked) {
+                        elem.checked = true;
+                        // change 이벤트 발생
+                        elem.dispatchEvent(new Event('change', { bubbles: true }));
+                        return 'checked_by_selector_' + i;
+                    } else if (elem && elem.checked) {
+                        return 'already_checked';
                     }
                 }
 
-                // wr_html 형태
-                var wrHtml = document.querySelector('input[name="wr_html"]');
-                if (wrHtml && !wrHtml.checked) { wrHtml.checked = true; }
+                // 2. 라디오 버튼 형태
+                var htmlRadio = document.getElementById('html1');
+                if (htmlRadio && !htmlRadio.checked) {
+                    htmlRadio.checked = true;
+                    htmlRadio.dispatchEvent(new Event('change', { bubbles: true }));
+                    return 'radio_html1';
+                }
+
+                // 3. name="html" 라디오 버튼 중 value="html1"
+                var htmlRadios = document.querySelectorAll('input[name="html"][type="radio"]');
+                for (var j = 0; j < htmlRadios.length; j++) {
+                    if (htmlRadios[j].value == 'html1' && !htmlRadios[j].checked) {
+                        htmlRadios[j].checked = true;
+                        htmlRadios[j].dispatchEvent(new Event('change', { bubbles: true }));
+                        return 'radio_value_html1';
+                    }
+                }
+
+                // 4. "HTML" 텍스트 근처의 체크박스 찾기
+                var allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+                for (var k = 0; k < allCheckboxes.length; k++) {
+                    var cb = allCheckboxes[k];
+                    var parent = cb.parentElement;
+                    if (parent && parent.textContent && parent.textContent.indexOf('HTML') !== -1) {
+                        if (!cb.checked) {
+                            cb.checked = true;
+                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            return 'found_near_html_text';
+                        } else {
+                            return 'already_checked_near_html';
+                        }
+                    }
+                }
+
+                return 'not_found';
             """)
-            return True
+
+            if result and 'checked' in str(result):
+                handle_alert()
+                return True
+
+            return False
 
         except Exception as e:
             # HTML 옵션 실패해도 계속 진행
-            pass
-
-        return False
+            return False
 
     def check_captcha_exists(self):
         """캡차 존재 여부 확인"""
