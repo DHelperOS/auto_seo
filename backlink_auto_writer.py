@@ -670,7 +670,7 @@ class BacklinkAutoWriter:
                 pass
 
         def try_click_checkbox(element):
-            """체크박스 클릭 시도"""
+            """체크박스 클릭 시도 - 클릭 후 value도 설정"""
             try:
                 if element and element.is_displayed():
                     if not element.is_selected():
@@ -679,6 +679,23 @@ class BacklinkAutoWriter:
                         time.sleep(0.2)
                         element.click()
                         handle_alert()
+                        # 클릭 후 value가 설정되었는지 확인하고, 안되어있으면 직접 설정
+                        time.sleep(0.3)
+                        try:
+                            current_value = element.get_attribute("value")
+                            if not current_value or current_value == "":
+                                # value가 비어있으면 html1로 설정 (HTML 사용, 자동줄바꿈 없음)
+                                self.driver.execute_script("arguments[0].value = 'html1';", element)
+                        except:
+                            pass
+                    else:
+                        # 이미 체크되어 있어도 value 확인
+                        try:
+                            current_value = element.get_attribute("value")
+                            if not current_value or current_value == "":
+                                self.driver.execute_script("arguments[0].value = 'html1';", element)
+                        except:
+                            pass
                     return True
             except:
                 pass
@@ -787,8 +804,23 @@ class BacklinkAutoWriter:
             except:
                 pass
 
-            # 방법 9: JavaScript로 다양한 방법 시도
+            # 방법 9: JavaScript로 다양한 방법 시도 (value도 반드시 설정)
             result = self.driver.execute_script("""
+                // 체크박스를 찾아서 체크하고 value를 html1로 설정하는 함수
+                function enableHtmlCheckbox(elem) {
+                    if (!elem) return false;
+                    elem.checked = true;
+                    // 중요: value를 html1로 설정해야 서버에서 HTML로 인식함
+                    // html1 = HTML 사용 (자동줄바꿈 없음)
+                    // html2 = HTML 사용 (자동줄바꿈 있음)
+                    if (!elem.value || elem.value === '') {
+                        elem.value = 'html1';
+                    }
+                    elem.dispatchEvent(new Event('change', { bubbles: true }));
+                    elem.dispatchEvent(new Event('click', { bubbles: true }));
+                    return true;
+                }
+
                 // 1. id나 name에 html이 포함된 체크박스
                 var selectors = [
                     'input[type="checkbox"][id="html"]',
@@ -802,13 +834,17 @@ class BacklinkAutoWriter:
 
                 for (var i = 0; i < selectors.length; i++) {
                     var elem = document.querySelector(selectors[i]);
-                    if (elem && !elem.checked) {
-                        elem.checked = true;
-                        // change 이벤트 발생
-                        elem.dispatchEvent(new Event('change', { bubbles: true }));
-                        return 'checked_by_selector_' + i;
-                    } else if (elem && elem.checked) {
-                        return 'already_checked';
+                    if (elem) {
+                        if (!elem.checked) {
+                            enableHtmlCheckbox(elem);
+                            return 'checked_and_value_set_' + i;
+                        } else {
+                            // 이미 체크되어 있어도 value 확인
+                            if (!elem.value || elem.value === '') {
+                                elem.value = 'html1';
+                            }
+                            return 'already_checked_value_ensured';
+                        }
                     }
                 }
 
@@ -836,13 +872,8 @@ class BacklinkAutoWriter:
                     var cb = allCheckboxes[k];
                     var parent = cb.parentElement;
                     if (parent && parent.textContent && parent.textContent.indexOf('HTML') !== -1) {
-                        if (!cb.checked) {
-                            cb.checked = true;
-                            cb.dispatchEvent(new Event('change', { bubbles: true }));
-                            return 'found_near_html_text';
-                        } else {
-                            return 'already_checked_near_html';
-                        }
+                        enableHtmlCheckbox(cb);
+                        return 'found_near_html_text_value_set';
                     }
                 }
 
