@@ -1,0 +1,34 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 수동 실행 가능
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller selenium
+
+      - name: Build EXE
+        run: |
+          pyinstaller --name "BacklinkAutoWriter" --onefile --windowed --hidden-import=tkinter --hidden-import=selenium --hidden-import=selenium.webdriver --hidden-import=selenium.webdriver.chrome --hidden-import=selenium.webdriver.chrome.service --hidden-import=selenium.webdriver.chrome.options --hidden-import=selenium.webdriver.common.by --hidden-import=selenium.webdriver.support.ui --hidden-import=selenium.webdriver.support.expected_conditions --hidden-import=selenium.common.exceptions --collect-all selenium backlink_auto_writer.py
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: BacklinkAutoWriter-Windows
+          path: dist/BacklinkAutoWriter.exe
+          retention-days: 30
